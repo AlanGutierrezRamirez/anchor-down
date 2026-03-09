@@ -155,7 +155,6 @@ class HealthManager: ObservableObject {
                 return
             }
             
-            // HealthKit returns 0.25 for 25%, so we use .percent()
             let fatValue = sample.quantity.doubleValue(for: .percent())
             
             DispatchQueue.main.async {
@@ -163,6 +162,55 @@ class HealthManager: ObservableObject {
             }
         }
         healthStore.execute(query)
+    }
+    
+    private func fetchStatistics(for identifier: HKQuantityTypeIdentifier, predicate: NSPredicate, unit: HKUnit, completion: @escaping (Double) -> Void) {
+        let type = HKQuantityType.quantityType(forIdentifier: identifier)!
+        let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, _ in
+            let sum = result?.sumQuantity()?.doubleValue(for: unit) ?? 0
+            completion(sum)
+        }
+        healthStore.execute(query)
+    }
+    
+    private func fetchMostRecentSample(for identifier: HKQuantityTypeIdentifier, predicate: NSPredicate, unit: HKUnit, completion: @escaping (Double) -> Void) {
+        let type = HKQuantityType.quantityType(forIdentifier: identifier)!
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+        
+        let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: 1, sortDescriptors: [sortDescriptor]) { _, results, _ in
+            let quantity = (results?.first as? HKQuantitySample)?.quantity
+            let value = quantity?.doubleValue(for: unit) ?? 0
+            completion(value)
+        }
+        healthStore.execute(query)
+    }
+    
+    func fetchDataForDay(_ date: Date, completion: @escaping (DailyLog) -> Void) {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: date)
+        let end = calendar.date(byAdding: .day, value: 1, to: start)!
+        
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        
+        fetchStatistics(for: .stepCount, predicate: predicate, unit: .count()) { steps in
+            self.fetchStatistics(for: .activeEnergyBurned, predicate: predicate, unit: .kilocalorie()) { calories in
+                
+                self.fetchMostRecentSample(for: HKQuantityTypeIdentifier.bodyMass, predicate: predicate, unit: .gramUnit(with: .kilo)) { weight in
+                    
+                    self.fetchMostRecentSample(for: HKQuantityTypeIdentifier.bodyFatPercentage, predicate: predicate, unit: .percent()) { fatFraction in
+                        
+                        let log = DailyLog(
+                            date: date,
+                            weight: weight,
+                            steps: Int(steps),
+                            activeCalories: Int(calories),
+                            bodyFat: fatFraction
+                        )
+                        completion(log)
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -22,6 +22,7 @@ struct HomeView: View {
     
     @AppStorage("startingWeight") private var startingWeight: Double = 0.0
         var body: some View {
+            NavigationStack{
             ScrollView {
                 ProgressRing(progress: 0.5)
                     .padding(20) 
@@ -84,6 +85,7 @@ struct HomeView: View {
                     SettingsView()
             }
             .environmentObject(settings)
+        }
     }
 
     var bodyFatColor: Color {
@@ -263,8 +265,8 @@ struct PreviousWeightCard: View {
 }
 
 struct SettingsView: View {
-    @AppStorage("startDate") private var startDateSaved: Double = Date().timeIntervalSince1970
-    @AppStorage("targetDate") private var targetDateSaved: Double = Date().addingTimeInterval(8640000).timeIntervalSince1970
+    @AppStorage("startDate") var startDateSaved: Double = Date().timeIntervalSince1970
+    @AppStorage("targetDate") var targetDateSaved: Double = Date().addingTimeInterval(8640000).timeIntervalSince1970
     
     @AppStorage("startingWeight") private var startingWeight: Double = 0.0
     @AppStorage("targetWeight") private var targetWeight: Double = 0.0
