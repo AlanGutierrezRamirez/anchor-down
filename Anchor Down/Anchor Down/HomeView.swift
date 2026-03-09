@@ -85,19 +85,13 @@ struct HomeView: View {
             }
             .environmentObject(settings)
     }
-    
-    var bodyMassIndex: Double {
-        let currentWeight = settings.healthManager.currentWeight
-        let heightInMeters = 1.73 // Your height: 173cm
-        guard currentWeight > 0 else { return 0.0 }
-        return currentWeight / (heightInMeters * heightInMeters)
-    }
+
     var bodyFatColor: Color {
-        switch bodyMassIndex {
+        switch settings.healthManager.bodyFatPercentage {
         case ..<13: return .blue
         case 13.1..<17: return .green
         case 17.1..<24: return .orange
-        default: return .red // Over 30 is categorized as obese
+        default: return .red
         }
     }
    
