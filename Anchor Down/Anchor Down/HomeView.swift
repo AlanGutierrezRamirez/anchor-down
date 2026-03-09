@@ -7,22 +7,19 @@
 
 import SwiftUI
 
-#Preview {
-    HomeView()
-}
-
 struct HomeView: View {
 
+    @StateObject var settings = SystemSettings()
+    
     @Environment(\.scenePhase) var scenePhase
     
     let columns = [
-        GridItem(.flexible()), // Column 1
-        GridItem(.flexible())  // Column 2
+        GridItem(.flexible()),
+        GridItem(.flexible())
     ]
     
-    @State private var showingSettings = false // Controls the popup
+    @State private var showingSettings = false
     
-    @StateObject var healthManager = HealthManager()
     @AppStorage("startingWeight") private var startingWeight: Double = 0.0
         var body: some View {
             ScrollView {
@@ -30,40 +27,44 @@ struct HomeView: View {
                     .padding(20) 
                 
                 VStack(alignment: .leading) {
-                    Text("Making Fast") // Section Header
+                    Text(Constants.HomeViewTitleString)
                         .font(.headline)
                         .padding(.horizontal)
+              
+                    LazyVGrid(columns: columns, spacing: 15) {
 
-                    StatCard(
-                            title: "Starting Weight",
+                        StatCard(
+                            title: Constants.StartingWeightString,
                             value: String(format: "%.1f kg", startingWeight),
                             icon: "calendar.badge.clock",
                             alignment: .center
                         )
-                        .frame(maxWidth: .infinity)
-                        .multilineTextAlignment(.center)
-                        .background(Color.blue.opacity(0.1)) // Subtle highlight for the "Anchor" weight
-                        .cornerRadius(15)
-              
-                    LazyVGrid(columns: columns, spacing: 15) {
-
+                            .gridCellColumns(2)
+                            .frame(maxWidth: .infinity)
+                            
+                        
                         PreviousWeightCard()
                         CurrentWeightCard()
                         OverallWeightCard()
                         TrendingWeightCard()
                         CaloriesBurnedCard()
                         TotalStepsCard()
+                        StatCard(
+                            title: "Body Fat",
+                            value: String(format: "%.1f%%", settings.healthManager.bodyFatPercentage),
+                            icon: "percent"
+                        )
+                        .background(bodyFatColor.opacity(0.2))
+                        .cornerRadius(15)
+                        
                     }
                     .padding(.horizontal)
                 }
-
-                
-
-                
                 
             }
+            .environmentObject(settings)
             .onAppear {
-                healthManager.requestAuthorization()
+                settings.healthManager.requestAuthorization()
             }
             .foregroundStyle(
                 LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing)
@@ -78,15 +79,32 @@ struct HomeView: View {
                         .foregroundColor(.primary)
                     }
                 }
-            }// This pops up the settings
+            }
             .sheet(isPresented: $showingSettings) {
                     SettingsView()
             }
+            .environmentObject(settings)
     }
+    
+    var bodyMassIndex: Double {
+        let currentWeight = settings.healthManager.currentWeight
+        let heightInMeters = 1.73 // Your height: 173cm
+        guard currentWeight > 0 else { return 0.0 }
+        return currentWeight / (heightInMeters * heightInMeters)
+    }
+    var bodyFatColor: Color {
+        switch bodyMassIndex {
+        case ..<13: return .blue
+        case 13.1..<17: return .green
+        case 17.1..<24: return .orange
+        default: return .red // Over 30 is categorized as obese
+        }
+    }
+   
 }
 
 struct ProgressRing: View {
-    var progress: Double // e.g., 0.01 for 1%
+    var progress: Double
     
     @AppStorage("startDate") private var startDateSaved: Double = Date().timeIntervalSince1970
     @AppStorage("targetDate") private var targetDateSaved: Double = Date().timeIntervalSince1970
@@ -97,28 +115,27 @@ struct ProgressRing: View {
                     end: Date(timeIntervalSince1970: targetDateSaved)
                 )
         ZStack {
-            // Background Circle
+
             Circle()
                 .stroke(Color.gray.opacity(0.1), lineWidth: 20)
             
-            // The Progress Line
             Circle()
-                .trim(from: 0, to: calc.progressFraction) // This is where the magic happens
+                .trim(from: 0, to: calc.progressFraction)
                 .stroke(
-                    Color(red: 0.45, green: 0.73, blue: 0.65), // That teal color
+                    Color(red: 0.45, green: 0.73, blue: 0.65),
                     style: StrokeStyle(lineWidth: 20, lineCap: .round)
                 )
-                .rotationEffect(.degrees(-90)) // Start at the top
+                .rotationEffect(.degrees(-90))
             
             VStack {
-                Text("\(calc.currentDay)") // Current Day
+                Text("\(calc.currentDay)")
                     .font(.system(size: 48, weight: .bold))
                 Text("of \(calc.totalDays) days")
                     .foregroundColor(.gray)
                 Text("\(Int(calc.progressFraction * 100))% Complete") // Percentage
                     .foregroundColor(.teal)
                     .font(.caption)
-                Text("Days To Go: \(calc.totalDays - calc.currentDay)")
+                Text(Constants.DaysToGoString + " \(calc.totalDays - calc.currentDay)")
                     
             }
         }
@@ -162,20 +179,15 @@ struct ProgressCalculator {
     let end: Date
     let today: Date = Date()
 
-    // 1. How many total days is this journey?
     var totalDays: Int {
         let diff = Calendar.current.dateComponents([.day], from: start, to: end)
         return max(1, diff.day ?? 1)
     }
-
-    // 2. What day are we on right now?
     var currentDay: Int {
         let diff = Calendar.current.dateComponents([.day], from: start, to: today)
         let day = (diff.day ?? 0) + 1
         return max(1, min(day, totalDays))
     }
-
-    // 3. Percentage for the Ring (0.0 to 1.0)
     var progressFraction: Double {
         return Double(currentDay) / Double(totalDays)
     }
@@ -184,130 +196,104 @@ struct ProgressCalculator {
 struct OverallWeightCard: View {
 
     @AppStorage("startingWeight") private var startingWeight: Double = 0.0
-    @StateObject var healthManager = HealthManager()
+    @EnvironmentObject var systemSettings: SystemSettings
     
     var body: some View {
         VStack(alignment: .leading) {
-            let weightChange = healthManager.currentWeight - startingWeight
+            let weightChange = systemSettings.healthManager.currentWeight - startingWeight
             
-            StatCard(title: "Weight Change", value: String(format: "%.1f kg", weightChange), icon: weightChange <= 0 ? "arrow.down.circle.fill" : "arrow,up.circle.fill")
+            StatCard(title: Constants.WeigthChangeString, value: String(format: "%.1f kg", weightChange), icon: weightChange <= 0 ? "arrow.down.circle.fill" : "arrow,up.circle.fill")
         }
-        .onAppear {
-            print("Dashboard appeared, requesting HealthKit...")
-            healthManager.requestAuthorization()
-        }
+
     }
     
 }
 
 struct TrendingWeightCard: View {
-    @StateObject var healthManager = HealthManager()
+    @EnvironmentObject var systemSettings: SystemSettings
     
     var body: some View {
         VStack(alignment: .leading) {
-            let diff = healthManager.weightDifference
+            let diff = systemSettings.healthManager.weightDifference
             
             StatCard(
-                title: "Latest Shift",
+                title: Constants.LatestShiftString,
                 value: diff == 0 ? "Steady" : String(format: "%+.1f kg", diff),
                 icon: diff > 0 ? "arrow.up.forward" : "arrow.down.forward"
             )
             .foregroundColor(diff < 0 ? .green : (diff > 0 ? .red : .gray))
         }
-        .onAppear {
-            print("Dashboard appeared, requesting HealthKit...")
-            healthManager.requestAuthorization()
-        }
     }
 }
 
 struct CaloriesBurnedCard: View {
-    @StateObject var healthManager = HealthManager()
-
+    @EnvironmentObject var systemSettings: SystemSettings
 
     var body: some View {
-        let totalCalories = healthManager.todayCalories + healthManager.restingCalories
+        let totalCalories = systemSettings.healthManager.todayCalories + systemSettings.healthManager.restingCalories
         
-        StatCard(title: "Calories Burned Today", value: String(format: "%.0f kcal", totalCalories), icon: "flame.fill")
-            .onAppear {
-                print("Dashboard appeared, requesting HealthKit...")
-                healthManager.requestAuthorization()
-            }
+        StatCard(title: Constants.CaloriesBurnedTodayString, value: String(format: "%.0f kcal", totalCalories), icon: "flame.fill")
     }
 }
 
 struct TotalStepsCard: View {
-    
-    @StateObject var healthManager = HealthManager()
+    @EnvironmentObject var systemSettings: SystemSettings
     
     var body: some View {
 
         StatCard(
-            title: "Total Steps",
-            value: "\(Int(healthManager.todaySteps))",
+            title: Constants.TotalStepsString,
+            value: "\(Int(systemSettings.healthManager.todaySteps))",
             icon: "shoeprints.fill"
         )
         .foregroundColor(.blue)
-        .onAppear {
-            print("Dashboard appeared, requesting HealthKit...")
-            healthManager.requestAuthorization()
-        }
-        
     }
 
 }
 
 struct CurrentWeightCard: View {
-    @StateObject var healthManager = HealthManager()
+    @EnvironmentObject var systemSettings: SystemSettings
     
     var body: some View {
-        StatCard(title: "Current Weight", value: String(format: "%.1f kg", healthManager.currentWeight), icon: "scalemass")
-            .onAppear {
-                print("Dashboard appeared, requesting HealthKit...")
-                healthManager.requestAuthorization()
-            }
+        StatCard(title: Constants.CurrentWeightString, value: String(format: "%.1f kg", systemSettings.healthManager.currentWeight), icon: "scalemass")
+
     }
 }
 
 struct PreviousWeightCard: View {
-    @StateObject var healthManager = HealthManager()
+    @EnvironmentObject var systemSettings: SystemSettings
     
     var body: some View {
-        StatCard(title: "Previous Weight", value: String(format: "%.1f kg", healthManager.previousWeight), icon: "scalemass.fill")
-            .onAppear {
-                print("Dashboard appeared, requesting HealthKit...")
-                healthManager.requestAuthorization()
-            }
+        StatCard(title: Constants.PreviousWeightString, value: String(format: "%.1f kg", systemSettings.healthManager.previousWeight), icon: "scalemass.fill")
     }
 }
 
 struct SettingsView: View {
-    // @AppStorage saves these automatically to the device's UserDefaults
     @AppStorage("startDate") private var startDateSaved: Double = Date().timeIntervalSince1970
-    @AppStorage("targetDate") private var targetDateSaved: Double = Date().addingTimeInterval(8640000).timeIntervalSince1970 // Default +100 days
+    @AppStorage("targetDate") private var targetDateSaved: Double = Date().addingTimeInterval(8640000).timeIntervalSince1970
     
     @AppStorage("startingWeight") private var startingWeight: Double = 0.0
     @AppStorage("targetWeight") private var targetWeight: Double = 0.0
     
     var body: some View {
         Form {
-            Section(header: Text("Your Journey Dates")) {
-                DatePicker("Start Date",
+            Section(header: Text(Constants.JourneyDatesString)) {
+                DatePicker(Constants.StartDateString,
                            selection: Binding(get: { Date(timeIntervalSince1970: startDateSaved) },
                                               set: { startDateSaved = $0.timeIntervalSince1970 }),
                            displayedComponents: .date)
                 
-                DatePicker("Event Date",
+                DatePicker(Constants.EventDateString,
                            selection: Binding(get: { Date(timeIntervalSince1970: targetDateSaved) },
                                               set: { targetDateSaved = $0.timeIntervalSince1970 }),
                            displayedComponents: .date)
             }
-            Section(header: Text("Weight Goals")) {
+            Section(header: Text(Constants.WeightGoalsString)) {
                 HStack {
-                        Text("Start Weight")
+                    Text(Constants.StartWeightString)
                         Spacer()
                         TextField("0.0", value: $startingWeight, format: .number)
-                            .keyboardType(.decimalPad) // Shows only numbers and a dot
+                            .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
                         Text("kg")
@@ -315,7 +301,7 @@ struct SettingsView: View {
                     }
                     
                     HStack {
-                        Text("Target Weight")
+                        Text(Constants.TargetWeightString)
                         Spacer()
                         TextField("0.0", value: $targetWeight, format: .number)
                             .keyboardType(.decimalPad)
@@ -330,3 +316,8 @@ struct SettingsView: View {
     }
 }
 
+#Preview {
+
+    HomeView()
+        .environmentObject(SystemSettings())
+}

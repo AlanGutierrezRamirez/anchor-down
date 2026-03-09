@@ -9,9 +9,13 @@ import SwiftUI
 
 @main
 struct Anchor_DownApp: App {
+    
+    @StateObject var settings = SystemSettings()
+    
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            MainView()
+                .environmentObject(settings)
         }
     }
 }
