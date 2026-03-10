@@ -19,71 +19,87 @@ struct HomeView: View {
     ]
     
     @State private var showingSettings = false
+    @State private var showingQuickAdd = false
     
     @AppStorage("startingWeight") private var startingWeight: Double = 0.0
         var body: some View {
             NavigationStack{
-            ScrollView {
-                ProgressRing(progress: 0.5)
-                    .padding(20) 
-                
-                VStack(alignment: .leading) {
-                    Text(Constants.HomeViewTitleString)
-                        .font(.headline)
-                        .padding(.horizontal)
-              
-                    LazyVGrid(columns: columns, spacing: 15) {
-
-                        StatCard(
-                            title: Constants.StartingWeightString,
-                            value: String(format: "%.1f kg", startingWeight),
-                            icon: "calendar.badge.clock",
-                            alignment: .center
-                        )
+                ScrollView {
+                    ProgressRing(progress: 0.5)
+                        .padding(20)
+                    
+                    VStack(alignment: .leading) {
+                        Text(Constants.HomeViewTitleString)
+                            .font(.headline)
+                            .padding(.horizontal)
+                        
+                        LazyVGrid(columns: columns, spacing: 15) {
+                            
+                            StatCard(
+                                title: Constants.StartingWeightString,
+                                value: String(format: "%.1f kg", startingWeight),
+                                icon: "calendar.badge.clock",
+                                alignment: .center
+                            )
                             .gridCellColumns(2)
                             .frame(maxWidth: .infinity)
                             
-                        
-                        PreviousWeightCard()
-                        CurrentWeightCard()
-                        OverallWeightCard()
-                        TrendingWeightCard()
-                        CaloriesBurnedCard()
-                        TotalStepsCard()
-                        StatCard(
-                            title: "Body Fat",
-                            value: String(format: "%.1f%%", settings.healthManager.bodyFatPercentage),
-                            icon: "percent"
-                        )
-                        .background(bodyFatColor.opacity(0.2))
-                        .cornerRadius(15)
+                            
+                            PreviousWeightCard()
+                            CurrentWeightCard()
+                            OverallWeightCard()
+                            TrendingWeightCard()
+                            CaloriesBurnedCard()
+                            TotalStepsCard()
+                            StatCard(
+                                title: "Body Fat",
+                                value: String(format: "%.1f%%", settings.healthManager.bodyFatPercentage),
+                                icon: "percent"
+                            )
+                            .background(bodyFatColor.opacity(0.2))
+                            .cornerRadius(15)
+                            
+                        }
+                        .padding(.horizontal)
+                    }
+                    
+                }
+                .environmentObject(settings)
+                .onAppear {
+                    settings.healthManager.requestAuthorization()
+                }
+                .foregroundStyle(
+                    LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing)
+                )
+                .background(Color(red: 0.02, green: 0.05, blue: 0.12).ignoresSafeArea())
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        HStack
+                        {
+                            Button {
+                                showingQuickAdd = true
+                            } label: {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.title3)
+                                    .foregroundColor(.cyan)
+                            }
+                            Button {
+                                showingSettings = true
+                            } label: {
+                                Image(systemName: "gearshape")
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.primary)
+                            }
+                        }
                         
                     }
-                    .padding(.horizontal)
                 }
-                
-            }
-            .environmentObject(settings)
-            .onAppear {
-                settings.healthManager.requestAuthorization()
-            }
-            .foregroundStyle(
-                LinearGradient(colors: [.cyan, .blue], startPoint: .leading, endPoint: .trailing)
-            )
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                    }
-                }
-            }
-            .sheet(isPresented: $showingSettings) {
+                .sheet(isPresented: $showingSettings) {
                     SettingsView()
-            }
+                }
+                .sheet(isPresented: $showingQuickAdd){
+                    QuickAddCaloriesView()
+                }
             .environmentObject(settings)
         }
     }

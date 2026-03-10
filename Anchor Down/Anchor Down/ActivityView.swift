@@ -47,7 +47,7 @@ struct ActivityView: View {
                 StatCard(
                     title: "Resting Metabolic Rate",
                     value: "\(Int(healthManager.restingCalories)) kcal/day",
-                    icon: "heart. text.square.fill",
+                    icon: "heart.text.square.fill",
                     alignment: .center
                 )
                 .frame(maxWidth: .infinity)

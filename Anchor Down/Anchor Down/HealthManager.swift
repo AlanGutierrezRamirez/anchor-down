@@ -14,6 +14,7 @@ class HealthManager: ObservableObject {
     @Published var currentWeight: Double = 0.0
     @Published var weightDifference: Double = 0.0
     @Published var previousWeight: Double = 0.0
+    @Published var todayDietaryCalories: Double = 0.0
 
     func requestAuthorization() {
         let weightType = HKQuantityType.quantityType(forIdentifier: .bodyMass)!
@@ -23,8 +24,12 @@ class HealthManager: ObservableObject {
         let fatType = HKQuantityType.quantityType(forIdentifier: .bodyFatPercentage)!
 
         let typesToRead: Set = [weightType, calorieType, stepType, basalType, fatType]
-            
-        healthStore.requestAuthorization(toShare: [], read: typesToRead) { success, error in
+
+        let typesToWrite: Set = [
+                HKQuantityType.quantityType(forIdentifier: .dietaryEnergyConsumed)!
+            ]
+
+        healthStore.requestAuthorization(toShare: typesToWrite, read: typesToRead) { success, error in
             if success {
                 DispatchQueue.main.async {
                     print("✅ All Health permissions granted")
@@ -33,6 +38,7 @@ class HealthManager: ObservableObject {
                     self.fetchTodaySteps()
                     self.fetchRestingCalories()
                     self.fetchLatestBodyFat()
+                    self.fetchTodayDietaryCalories()
                 }
 
             } else {
@@ -194,21 +200,62 @@ class HealthManager: ObservableObject {
         
         fetchStatistics(for: .stepCount, predicate: predicate, unit: .count()) { steps in
             self.fetchStatistics(for: .activeEnergyBurned, predicate: predicate, unit: .kilocalorie()) { calories in
-                
                 self.fetchMostRecentSample(for: HKQuantityTypeIdentifier.bodyMass, predicate: predicate, unit: .gramUnit(with: .kilo)) { weight in
-                    
                     self.fetchMostRecentSample(for: HKQuantityTypeIdentifier.bodyFatPercentage, predicate: predicate, unit: .percent()) { fatFraction in
-                        
-                        let log = DailyLog(
-                            date: date,
-                            weight: weight,
-                            steps: Int(steps),
-                            activeCalories: Int(calories),
-                            bodyFat: fatFraction
-                        )
-                        completion(log)
+                        self.fetchStatistics(for: .basalEnergyBurned, predicate: predicate, unit: .kilocalorie()) { resting in
+                            
+                            // We only need to fetch dietary once!
+                            self.fetchStatistics(for: .dietaryEnergyConsumed, predicate: predicate, unit: .kilocalorie()) { dietary in
+                                
+                                let log = DailyLog(
+                                    date: date,
+                                    weight: weight,
+                                    steps: Int(steps),
+                                    activeCalories: Int(calories),
+                                    restingCalories: Int(resting),
+                                    bodyFat: fatFraction,
+                                    dietaryCalories: Int(dietary)
+                                )
+                                completion(log)
+                            }
+                        }
                     }
                 }
+            }
+        }
+    }
+    
+    func fetchTodayDietaryCalories() {
+        let dietaryType = HKQuantityType.quantityType(forIdentifier: .dietaryEnergyConsumed)!
+        let startOfDay = Calendar.current.startOfDay(for: Date())
+        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: Date(), options: .strictStartDate)
+
+        let query = HKStatisticsQuery(quantityType: dietaryType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, result, _ in
+            let totalCals = result?.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0.0
+            
+            DispatchQueue.main.async {
+                self.todayDietaryCalories = totalCals
+            }
+        }
+        healthStore.execute(query)
+    }
+    
+    func saveDietaryCalories(calories: Double, completion: @escaping (Bool) -> Void) {
+        guard let dietaryType = HKQuantityType.quantityType(forIdentifier: .dietaryEnergyConsumed) else {
+            completion(false)
+            return
+        }
+        
+        // Package the number as kilocalories
+        let quantity = HKQuantity(unit: .kilocalorie(), doubleValue: calories)
+        
+        // Create the sample for right now
+        let sample = HKQuantitySample(type: dietaryType, quantity: quantity, start: Date(), end: Date())
+        
+        // Save to the Health Store
+        healthStore.save(sample) { success, error in
+            DispatchQueue.main.async {
+                completion(success)
             }
         }
     }

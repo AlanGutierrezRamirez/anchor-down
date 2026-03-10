@@ -1,23 +1,38 @@
-//
-//  LogView.swift
-//  Anchor Down
-//
-//  Created by Alan Gutierrez Ramirez on 6/3/26.
-//
-
 import SwiftUI
 
+// 1. The Missing Struct: This packages all the math cleanly for the view
+struct WeeklyLogGroup: Identifiable {
+    let id = UUID()
+    let weekStart: Date
+    let logs: [DailyLog]
+    let weightLost: Double
+    let fatDropped: Double
+    let totalSteps: Int
+}
+
 struct LogView: View {
-    @StateObject var settings = SystemSettings()
+    // Make sure this is EnvironmentObject so it syncs with HomeView!
+    @EnvironmentObject var settings: SystemSettings
+    
     @AppStorage("startingDate") private var startingDate: Date = Date()
     @State private var dailyLogs: [DailyLog] = []
     
-    var groupedLogs: [(Date, [DailyLog])] {
+    // 2. The Updated Grouping Logic: Maps the raw logs into the neat WeeklyLogGroup struct
+    var groupedLogsData: [WeeklyLogGroup] {
         let dict = Dictionary(grouping: dailyLogs) { log in
             let components = Calendar.current.dateComponents([.yearForWeekOfYear, .weekOfYear], from: log.date)
             return Calendar.current.date(from: components) ?? log.date
         }
-        return dict.sorted { $0.key > $1.key }
+        
+        return dict.map { (key, logs) in
+            WeeklyLogGroup(
+                weekStart: key,
+                logs: logs.sorted { $0.date > $1.date }, // Pre-sort logs here
+                weightLost: calculateWeeklyWeightLoss(for: logs),
+                fatDropped: calculateWeeklyFatLoss(for: logs),
+                totalSteps: logs.reduce(0) { $0 + $1.steps }
+            )
+        }.sorted { $0.weekStart > $1.weekStart }
     }
     
     var body: some View {
@@ -25,17 +40,25 @@ struct LogView: View {
             ScrollView {
                 LazyVStack(spacing: 25, pinnedViews: [.sectionHeaders]) {
                     
-                    ForEach(groupedLogs, id: \.0) { weekStart, logsInWeek in
-                        Section(header:
-                                    WeeklySummaryCard(
-                                        weightLost: calculateWeeklyWeightLoss(for: logsInWeek),
-                                        fatDropped: calculateWeeklyFatLoss(for: logsInWeek),
-                                        totalSteps: logsInWeek.reduce(0) { $0 + $1.steps }
-                                    )
-                                        .padding(.horizontal)
-                        ) {
-                            ForEach(logsInWeek.sorted(by: { $0.date > $1.date })) { log in
-                                DailyRow(log: log)
+                    // 3. Now the ForEach perfectly matches the struct
+                    ForEach(groupedLogsData) { group in
+                        Section(header: headerView(for: group)) {
+                            
+                            ForEach(group.logs) { log in
+                                if log.isToday {
+                                    // 4. Construct the live "Today" log here using your settings
+                                    DailyRow(log: DailyLog(
+                                        date: log.date,
+                                        weight: settings.healthManager.currentWeight,
+                                        steps: Int(settings.healthManager.todaySteps),
+                                        activeCalories: Int(settings.healthManager.todayCalories),
+                                        restingCalories: Int(settings.healthManager.restingCalories),
+                                        bodyFat: settings.healthManager.bodyFatPercentage,
+                                        dietaryCalories: Int(settings.healthManager.todayDietaryCalories)
+                                    ))
+                                } else {
+                                    DailyRow(log: log)
+                                }
                             }
                         }
                     }
@@ -43,24 +66,28 @@ struct LogView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                Color.clear
-                    .frame(height: 100)
+                Color.clear.frame(height: 100)
             }
             .background(Color(red: 0.02, green: 0.05, blue: 0.12).ignoresSafeArea())
             .onAppear {
+                settings.healthManager.requestAuthorization()
                 fetchAllLogsSinceStart()
             }
         }
     }
-    func calculateLoss(for logs: [DailyLog]) -> Double {
-        guard logs.count > 1 else { return 0.0 }
-        let sorted = logs.sorted(by: { $0.date < $1.date })
-        return (sorted.first?.weight ?? 0) - (sorted.last?.weight ?? 0)
+
+    @ViewBuilder
+    private func headerView(for group: WeeklyLogGroup) -> some View {
+        WeeklySummaryCard(
+            weightLost: group.weightLost,
+            fatDropped: group.fatDropped,
+            totalSteps: group.totalSteps
+        )
+        .padding(.horizontal)
     }
+
     func calculateWeeklyWeightLoss(for logs: [DailyLog]) -> Double {
-
         let sortedLogs = logs.sorted { $0.date < $1.date }
-
         let validLogs = sortedLogs.filter { $0.weight > 0 }
         
         guard let firstWeight = validLogs.first?.weight,
@@ -82,62 +109,165 @@ struct LogView: View {
         return first - last
     }
         
-
+    func fetchAllLogsSinceStart() {
+        let calendar = Calendar.current
+        @AppStorage("startDate") var startDateSaved: Double = Date().timeIntervalSince1970
+        let start = calendar.startOfDay(for: Date(timeIntervalSince1970: startDateSaved))
+        let today = calendar.startOfDay(for: Date())
+        
+        let components = calendar.dateComponents([.day], from: start, to: today)
+        let daysPassed = components.day ?? 0
+        
+        self.dailyLogs = []
+        
+        for i in 0...daysPassed {
+            if let targetDate = calendar.date(byAdding: .day, value: -i, to: today) {
+                settings.healthManager.fetchDataForDay(targetDate) { log in
+                    DispatchQueue.main.async {
+                        self.dailyLogs.append(log)
+                    }
+                }
+            }
+        }
+    }
 }
 
+// 5. Added isToday computed property
 struct DailyLog: Identifiable {
     let id = UUID()
     let date: Date
     let weight: Double
     let steps: Int
     let activeCalories: Int
+    let restingCalories: Int
     let bodyFat: Double
+    let dietaryCalories: Int
+    
+    var isToday: Bool {
+        Calendar.current.isDateInToday(date)
+    }
+    
+    var totalCaloriesBurned: Int {
+        return activeCalories + restingCalories
+    }
+    
+    var netCalories: Int {
+        return dietaryCalories - totalCaloriesBurned
+    }
 }
 
 struct DailyRow: View {
     let log: DailyLog
     
+    // Determine the color of the net calories (Deficit = Green, Surplus = Red)
+    var netColor: Color {
+        log.netCalories < 0 ? .green : .red
+    }
+    
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading) {
-                Text(log.date.formatted(.dateTime.day().month(.abbreviated)))
-                    .font(.subheadline).bold()
-                Text(log.date.formatted(.dateTime.weekday()))
-                    .font(.caption2).foregroundColor(.secondary)
+        VStack(spacing: 16) {
+            
+            // --- TOP ROW: Header (Date & Weight) ---
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(log.date.formatted(.dateTime.day().month(.wide)))
+                        .font(.headline)
+                    Text(log.date.formatted(.dateTime.weekday(.wide)))
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(String(format: "%.1f kg", log.weight))
+                        .font(.title3.weight(.bold))
+                        .foregroundColor(.cyan)
+                    Text("Weight")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
-            .frame(width: 60, alignment: .leading)
             
-            Spacer()
+            Divider()
+                .background(Color.gray.opacity(0.3))
             
-            VStack {
-                Text(String(format: "%.1f kg", log.weight))
-                    .font(.system(.body, design: .rounded)).bold()
-                Text("Weight").font(.caption2).foregroundColor(.secondary)
+            // --- BOTTOM ROW: Metrics Grid ---
+            HStack {
+                // 1. Steps
+                DailyStatItem(
+                    title: "Steps",
+                    value: "\(log.steps)",
+                    icon: "shoeprints.fill",
+                    color: .primary
+                )
+                
+                Spacer()
+                
+                // 2. Eaten
+                DailyStatItem(
+                    title: "Eaten",
+                    value: "\(log.dietaryCalories)",
+                    icon: "fork.knife",
+                    color: .green
+                )
+                
+                Spacer()
+                
+                // 3. Burned
+                DailyStatItem(
+                    title: "Burned",
+                    value: "\(log.totalCaloriesBurned)",
+                    icon: "flame.fill",
+                    color: .orange
+                )
+                
+                Spacer()
+                
+                // 4. Net Deficit/Surplus
+                DailyStatItem(
+                    title: "Net",
+                    value: "\(abs(log.netCalories))",
+                    icon: log.netCalories < 0 ? "arrow.down.right" : "arrow.up.right",
+                    color: netColor
+                )
             }
-            
-            Spacer()
-            
-            VStack {
-                Text("\(log.steps)")
-                    .font(.system(.body, design: .rounded)).bold()
-                Text("Steps").font(.caption2).foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            VStack(alignment: .trailing) {
-                Text("\(log.activeCalories)")
-                    .font(.system(.body, design: .rounded)).bold()
-                    .foregroundColor(.orange)
-                Text("Kcal").font(.caption2).foregroundColor(.secondary)
-            }
-            .frame(width: 60, alignment: .trailing)
         }
-        .padding()
-        .background(Color(.systemGray6).opacity(0.1))
-        .cornerRadius(12)
+        .padding(16)
+        .background(Color(.systemGray6).opacity(0.15)) // Subtle card background
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
+        .padding(.horizontal)
     }
 }
+
+// Helper view to make the grid columns clean and reusable
+struct DailyStatItem: View {
+    let title: String
+    let value: String
+    let icon: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundColor(color.opacity(0.8))
+            
+            Text(value)
+                .font(.system(.subheadline, design: .rounded).bold())
+                .foregroundColor(color)
+            
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+        }
+        .frame(minWidth: 50) // Ensures columns stay evenly spaced
+    }
+} 
 
 struct WeeklySummaryCard: View {
     let weightLost: Double
@@ -175,41 +305,6 @@ struct WeeklySummaryCard: View {
         .cornerRadius(15)
         .overlay(RoundedRectangle(cornerRadius: 15).stroke(Color.cyan.opacity(0.3), lineWidth: 1))
     }
-}
-
-
-extension LogView {
-    func fetchAllLogsSinceStart() {
-        let calendar = Calendar.current
-        @AppStorage("startDate") var startDateSaved: Double = Date().timeIntervalSince1970
-        let start = calendar.startOfDay(for: Date(timeIntervalSince1970: startDateSaved))
-        let today = calendar.startOfDay(for: Date())
-        
-        let components = calendar.dateComponents([.day], from: start, to: today)
-        let daysPassed = components.day ?? 0
-        
-        self.dailyLogs = []
-        
-        for i in 0...daysPassed {
-            if let targetDate = calendar.date(byAdding: .day, value: -i, to: today) {
-                settings.healthManager.fetchDataForDay(targetDate) { log in
-                    DispatchQueue.main.async {
-                        self.dailyLogs.append(log)
-                        self.dailyLogs.sort { $0.date > $1.date }
-                    }
-                }
-            }
-        }
-    }
-    
-    func calculateWeeklyStats() -> (weightLost: Double, fatDropped: Double, totalSteps: Int)? {
-        guard dailyLogs.count >= 7 else { return nil }
-        let lastWeek = dailyLogs.suffix(7)
-        let weightLost = (lastWeek.first?.weight ?? 0) - (lastWeek.last?.weight ?? 0)
-        let totalSteps = lastWeek.reduce(0) { $0 + $1.steps }
-        return (weightLost, 0.2, totalSteps)
-    }
-    
 }
 
 #Preview {

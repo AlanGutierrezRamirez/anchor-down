@@ -257,7 +257,10 @@
 				DEVELOPMENT_TEAM = TRJLQ5ZRXA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Anchor-Down-Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "we need your weight to track your 100 day transformation progress";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Anchor Down needs permission to save your daly meal calories to Apple Health to track your journey";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -291,7 +294,10 @@
 				DEVELOPMENT_TEAM = TRJLQ5ZRXA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Anchor-Down-Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "we need your weight to track your 100 day transformation progress";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Anchor Down needs permission to save your daly meal calories to Apple Health to track your journey";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
