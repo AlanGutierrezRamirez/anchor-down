@@ -22,11 +22,12 @@ class HealthManager: ObservableObject {
         let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
         let basalType = HKQuantityType.quantityType(forIdentifier: .basalEnergyBurned)!
         let fatType = HKQuantityType.quantityType(forIdentifier: .bodyFatPercentage)!
-
-        let typesToRead: Set = [weightType, calorieType, stepType, basalType, fatType]
+        let workoutType = HKObjectType.workoutType()
+        
+        let typesToRead: Set = [weightType, calorieType, stepType, basalType, fatType, workoutType]
 
         let typesToWrite: Set = [
-                HKQuantityType.quantityType(forIdentifier: .dietaryEnergyConsumed)!
+                HKQuantityType.quantityType(forIdentifier: .dietaryEnergyConsumed)!, workoutType
             ]
 
         healthStore.requestAuthorization(toShare: typesToWrite, read: typesToRead) { success, error in
@@ -256,6 +257,68 @@ class HealthManager: ObservableObject {
         healthStore.save(sample) { success, error in
             DispatchQueue.main.async {
                 completion(success)
+            }
+        }
+    }
+
+    @Published var workoutHistory: [Date: [HKWorkout]] = [:]
+
+    func fetchWorkouts(since startDate: Date) {
+        let workoutType = HKObjectType.workoutType()
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: Date(), options: .strictStartDate)
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        
+        let query = HKSampleQuery(sampleType: workoutType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: [sortDescriptor]) { _, samples, _ in
+            guard let workouts = samples as? [HKWorkout] else { return }
+            
+            var grouped: [Date: [HKWorkout]] = [:]
+            let calendar = Calendar.current
+            
+            for workout in workouts {
+                let day = calendar.startOfDay(for: workout.startDate)
+                grouped[day, default: []].append(workout)
+            }
+            
+            DispatchQueue.main.async {
+                self.workoutHistory = grouped
+            }
+        }
+        healthStore.execute(query)
+    }
+
+    func saveWorkout(type: HKWorkoutActivityType, date: Date, durationMinutes: Double, completion: @escaping (Bool) -> Void) {
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = type
+        configuration.locationType = .unknown
+        
+        let builder = HKWorkoutBuilder(healthStore: healthStore, configuration: configuration, device: .local())
+        
+        let endDate = date.addingTimeInterval(durationMinutes * 60)
+        
+        builder.beginCollection(withStart: date) { success, error in
+            guard success else {
+                DispatchQueue.main.async { completion(false) }
+                return
+            }
+            
+            builder.endCollection(withEnd: endDate) { success, error in
+                guard success else {
+                    DispatchQueue.main.async { completion(false) }
+                    return
+                }
+
+                builder.finishWorkout { workout, error in
+                    DispatchQueue.main.async {
+                        if workout != nil {
+                            let defaultStart = Calendar.current.date(byAdding: .month, value: -6, to: Date())!
+                            self.fetchWorkouts(since: defaultStart)
+                            completion(true)
+                        } else {
+                            print("Failed to build workout: \(String(describing: error))")
+                            completion(false)
+                        }
+                    }
+                }
             }
         }
     }
