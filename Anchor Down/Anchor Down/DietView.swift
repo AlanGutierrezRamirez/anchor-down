@@ -12,14 +12,13 @@ struct QuickAddCaloriesView: View {
     
     @State private var inputCalories: String = ""
     @State private var isSaving = false
-    
-    // Nautical theme quick-add buttons
+
     let quickAmounts = [100, 250, 400, 600]
     
     var body: some View {
         NavigationStack {
             VStack(spacing: 30) {
-                // The Main Input
+
                 TextField("0", text: $inputCalories)
                     .font(.system(size: 72, weight: .bold, design: .rounded))
                     .multilineTextAlignment(.center)
@@ -30,7 +29,6 @@ struct QuickAddCaloriesView: View {
                     .font(.headline)
                     .foregroundColor(.secondary)
                 
-                // Quick Add Chips
                 HStack(spacing: 15) {
                     ForEach(quickAmounts, id: \.self) { amount in
                         Button(action: {
@@ -48,8 +46,7 @@ struct QuickAddCaloriesView: View {
                 }
                 
                 Spacer()
-                
-                // Save Button
+
                 Button(action: saveCalories) {
                     Text(isSaving ? "Logging..." : "Log Meal")
                         .font(.headline)
@@ -80,7 +77,6 @@ struct QuickAddCaloriesView: View {
         settings.healthManager.saveDietaryCalories(calories: calories) { success in
             isSaving = false
             if success {
-                // Trigger a refresh of your today stats here if needed
                 dismiss()
             }
         }

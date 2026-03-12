@@ -12,14 +12,38 @@ import Combine
 class SystemSettings: ObservableObject {
     @Published var healthManager = HealthManager()
     private var cancellables = Set<AnyCancellable>()
+    @Published var detailedWorkouts: [DetailedWorkout] = []
+        
 
     init() {
+        
         healthManager.objectWillChange
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+        
+        loadDetailedWorkouts()
     }
+    func saveDetailedWorkout(_ workout: DetailedWorkout) {
+            detailedWorkouts.removeAll { Calendar.current.isDate($0.date, inSameDayAs: workout.date) }
+            detailedWorkouts.append(workout)
+            
+            if let encoded = try? JSONEncoder().encode(detailedWorkouts) {
+                UserDefaults.standard.set(encoded, forKey: "detailed_workouts")
+            }
+        }
+        
+        func loadDetailedWorkouts() {
+            if let data = UserDefaults.standard.data(forKey: "detailed_workouts"),
+               let decoded = try? JSONDecoder().decode([DetailedWorkout].self, from: data) {
+                self.detailedWorkouts = decoded
+            }
+        }
+        
+        func getWorkout(for date: Date) -> DetailedWorkout? {
+            return detailedWorkouts.first { Calendar.current.isDate($0.date, inSameDayAs: date) }
+        }
 }
 
 struct Constants{

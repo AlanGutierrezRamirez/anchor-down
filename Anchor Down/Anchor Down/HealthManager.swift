@@ -204,8 +204,7 @@ class HealthManager: ObservableObject {
                 self.fetchMostRecentSample(for: HKQuantityTypeIdentifier.bodyMass, predicate: predicate, unit: .gramUnit(with: .kilo)) { weight in
                     self.fetchMostRecentSample(for: HKQuantityTypeIdentifier.bodyFatPercentage, predicate: predicate, unit: .percent()) { fatFraction in
                         self.fetchStatistics(for: .basalEnergyBurned, predicate: predicate, unit: .kilocalorie()) { resting in
-                            
-                            // We only need to fetch dietary once!
+
                             self.fetchStatistics(for: .dietaryEnergyConsumed, predicate: predicate, unit: .kilocalorie()) { dietary in
                                 
                                 let log = DailyLog(
@@ -247,13 +246,10 @@ class HealthManager: ObservableObject {
             return
         }
         
-        // Package the number as kilocalories
         let quantity = HKQuantity(unit: .kilocalorie(), doubleValue: calories)
         
-        // Create the sample for right now
         let sample = HKQuantitySample(type: dietaryType, quantity: quantity, start: Date(), end: Date())
-        
-        // Save to the Health Store
+
         healthStore.save(sample) { success, error in
             DispatchQueue.main.async {
                 completion(success)

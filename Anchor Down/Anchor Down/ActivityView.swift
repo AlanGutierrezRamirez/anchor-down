@@ -19,7 +19,7 @@ import Foundation
 struct ExerciseSet: Identifiable, Codable {
     var id = UUID()
     var reps: Int
-    var weight: Double // kg
+    var weight: Double
     var isCompleted: Bool = false
 }
 
@@ -55,18 +55,15 @@ struct ActivityView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
-                
-                // --- 1. THE CALENDAR HEATMAP ---
+
                 VStack(alignment: .leading, spacing: 8) {
                     
-                    // NEW: Dynamic Month & Year Header
                     Text(selectedDate.formatted(.dateTime.month(.wide).year()))
                         .font(.headline)
                         .foregroundColor(.cyan)
-                        .padding(.leading, 30) // Aligns with the grid past the weekday labels
+                        .padding(.leading, 30)
                     
                     HStack(spacing: 10) {
-                        // Weekday Labels
                         VStack(spacing: 6) {
                             ForEach(weekdays, id: \.self) { day in
                                 Text(day)
@@ -109,7 +106,7 @@ struct ActivityView: View {
                 .background(Color(.systemGray6).opacity(0.1))
                 .cornerRadius(16)
                 .padding(.horizontal)
-                
+
                 VStack(alignment: .leading, spacing: 15) {
                     Text("Selected: \(selectedDate.formatted(date: .abbreviated, time: .omitted))")
                         .font(.headline)
@@ -117,35 +114,53 @@ struct ActivityView: View {
                     
                     Divider().background(Color.white.opacity(0.2))
                     
-                    let workouts = settings.healthManager.workoutHistory[selectedDate] ?? []
-                    
-                    if workouts.isEmpty {
-                        Text("No activity logged for this day.")
-                            .foregroundColor(.secondary)
-
-                        Button(action: { showingWorkoutBuilder = true }) {
-                            HStack {
-                                Image(systemName: "plus.circle.fill")
-                                Text("Log Detailed Workout")
+                    if let localWorkout = settings.getWorkout(for: selectedDate) {
+                        
+                        Text(localWorkout.title)
+                            .font(.title3.bold())
+                            .foregroundColor(.cyan)
+                        
+                        ForEach(localWorkout.exercises) { exercise in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(exercise.name).font(.subheadline.bold())
+                                Text("\(exercise.sets.count) sets")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                             }
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.cyan)
-                            .foregroundColor(.black)
-                            .cornerRadius(12)
+                            .padding(.bottom, 4)
                         }
                         
                     } else {
-                        // Keep this to show Apple Health summaries
-                        ForEach(workouts, id: \.uuid) { workout in
-                            HStack {
-                                StatBox(title: "Session", value: nameFor(workout.workoutActivityType), icon: iconFor(workout.workoutActivityType))
-                                StatBox(title: "Duration", value: "\(Int(workout.duration / 60)) min", icon: "timer")
+                        let workouts = settings.healthManager.workoutHistory[selectedDate] ?? []
+                        
+                        if workouts.isEmpty {
+                            Text("No activity logged for this day.")
+                                .foregroundColor(.secondary)
+                            
+                            Button(action: { showingWorkoutBuilder = true }) {
+                                HStack {
+                                    Image(systemName: "plus.circle.fill")
+                                    Text("Log Detailed Workout")
+                                }
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.cyan)
+                                .foregroundColor(.black)
+                                .cornerRadius(12)
+                            }
+                            
+                        } else {
+                            ForEach(workouts, id: \.uuid) { workout in
+                                HStack {
+                                    StatBox(title: "Session", value: nameFor(workout.workoutActivityType), icon: iconFor(workout.workoutActivityType))
+                                    StatBox(title: "Duration", value: "\(Int(workout.duration / 60)) min", icon: "timer")
+                                }
                             }
                         }
                     }
                 }
+                                
                 .padding()
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color(.systemGray6).opacity(0.15))
@@ -164,7 +179,6 @@ struct ActivityView: View {
         }
     }
     
-    // ... KEEP YOUR EXISTING HELPER LOGIC HERE (paddedJourneyDates, nameFor, iconFor, etc) ...
     var paddedJourneyDates: [Date?] {
         let start = Date(timeIntervalSince1970: startDateSaved)
         let end = Date(timeIntervalSince1970: targetDateSaved)
@@ -202,7 +216,6 @@ struct ActivityView: View {
     }
 }
 
-// Keep StatBox here
 struct StatBox: View {
     let title: String
     let value: String

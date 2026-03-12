@@ -11,13 +11,11 @@ struct WeeklyLogGroup: Identifiable {
 }
 
 struct LogView: View {
-    // Make sure this is EnvironmentObject so it syncs with HomeView!
     @EnvironmentObject var settings: SystemSettings
     
     @AppStorage("startingDate") private var startingDate: Date = Date()
     @State private var dailyLogs: [DailyLog] = []
     
-    // 2. The Updated Grouping Logic: Maps the raw logs into the neat WeeklyLogGroup struct
     var groupedLogsData: [WeeklyLogGroup] {
         let dict = Dictionary(grouping: dailyLogs) { log in
             let components = Calendar.current.dateComponents([.yearForWeekOfYear, .weekOfYear], from: log.date)
@@ -27,7 +25,7 @@ struct LogView: View {
         return dict.map { (key, logs) in
             WeeklyLogGroup(
                 weekStart: key,
-                logs: logs.sorted { $0.date > $1.date }, // Pre-sort logs here
+                logs: logs.sorted { $0.date > $1.date },
                 weightLost: calculateWeeklyWeightLoss(for: logs),
                 fatDropped: calculateWeeklyFatLoss(for: logs),
                 totalSteps: logs.reduce(0) { $0 + $1.steps }
@@ -40,13 +38,11 @@ struct LogView: View {
             ScrollView {
                 LazyVStack(spacing: 25, pinnedViews: [.sectionHeaders]) {
                     
-                    // 3. Now the ForEach perfectly matches the struct
                     ForEach(groupedLogsData) { group in
                         Section(header: headerView(for: group)) {
                             
                             ForEach(group.logs) { log in
                                 if log.isToday {
-                                    // 4. Construct the live "Today" log here using your settings
                                     DailyRow(log: DailyLog(
                                         date: log.date,
                                         weight: settings.healthManager.currentWeight,
@@ -132,7 +128,6 @@ struct LogView: View {
     }
 }
 
-// 5. Added isToday computed property
 struct DailyLog: Identifiable {
     let id = UUID()
     let date: Date
@@ -159,15 +154,13 @@ struct DailyLog: Identifiable {
 struct DailyRow: View {
     let log: DailyLog
     
-    // Determine the color of the net calories (Deficit = Green, Surplus = Red)
     var netColor: Color {
         log.netCalories < 0 ? .green : .red
     }
     
     var body: some View {
         VStack(spacing: 16) {
-            
-            // --- TOP ROW: Header (Date & Weight) ---
+
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(log.date.formatted(.dateTime.day().month(.wide)))
@@ -191,10 +184,8 @@ struct DailyRow: View {
             
             Divider()
                 .background(Color.gray.opacity(0.3))
-            
-            // --- BOTTOM ROW: Metrics Grid ---
+
             HStack {
-                // 1. Steps
                 DailyStatItem(
                     title: "Steps",
                     value: "\(log.steps)",
@@ -203,8 +194,7 @@ struct DailyRow: View {
                 )
                 
                 Spacer()
-                
-                // 2. Eaten
+
                 DailyStatItem(
                     title: "Eaten",
                     value: "\(log.dietaryCalories)",
@@ -213,8 +203,7 @@ struct DailyRow: View {
                 )
                 
                 Spacer()
-                
-                // 3. Burned
+
                 DailyStatItem(
                     title: "Burned",
                     value: "\(log.totalCaloriesBurned)",
@@ -223,8 +212,7 @@ struct DailyRow: View {
                 )
                 
                 Spacer()
-                
-                // 4. Net Deficit/Surplus
+
                 DailyStatItem(
                     title: "Net",
                     value: "\(abs(log.netCalories))",
@@ -244,7 +232,6 @@ struct DailyRow: View {
     }
 }
 
-// Helper view to make the grid columns clean and reusable
 struct DailyStatItem: View {
     let title: String
     let value: String
@@ -265,7 +252,7 @@ struct DailyStatItem: View {
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.secondary)
         }
-        .frame(minWidth: 50) // Ensures columns stay evenly spaced
+        .frame(minWidth: 50)
     }
 } 
 

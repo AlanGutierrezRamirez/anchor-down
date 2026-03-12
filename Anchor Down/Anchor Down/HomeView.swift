@@ -144,7 +144,7 @@ struct ProgressRing: View {
                     .font(.system(size: 48, weight: .bold))
                 Text("of \(calc.totalDays) days")
                     .foregroundColor(.gray)
-                Text("\(Int(calc.progressFraction * 100))% Complete") // Percentage
+                Text("\(Int(calc.progressFraction * 100))% Complete")
                     .foregroundColor(.teal)
                     .font(.caption)
                 Text(Constants.DaysToGoString + " \(calc.totalDays - calc.currentDay)")

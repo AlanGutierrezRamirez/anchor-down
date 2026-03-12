@@ -14,14 +14,12 @@ struct WorkoutBuilderView: View {
     
     let selectedDate: Date
     
-    // The workout we are actively building
     @State private var workoutTitle: String = "Strength Session"
     @State private var exercises: [LoggedExercise] = []
     
     @State private var showingExerciseSheet = false
     @State private var isSaving = false
     
-    // Your custom home gym library
     let exerciseLibrary = [
         "Warmup / Mobility",
         "Dead Bugs",
@@ -40,9 +38,7 @@ struct WorkoutBuilderView: View {
             NavigationStack {
                 ZStack(alignment: .bottom) {
                     
-                    // 1. Upgraded from ScrollView to List
                     List {
-                        // --- Header Area ---
                         VStack(alignment: .leading, spacing: 5) {
                             Text("Workout for \(selectedDate.formatted(date: .abbreviated, time: .omitted))")
                                 .font(.subheadline)
@@ -56,17 +52,15 @@ struct WorkoutBuilderView: View {
                         .listRowSeparator(.hidden)
                         .listRowInsets(EdgeInsets(top: 20, leading: 20, bottom: 20, trailing: 20))
                         
-                        // --- Exercise List with SWIPE TO DELETE ---
+
                         ForEach($exercises) { $exercise in
                             ExerciseCardView(exercise: $exercise)
-                                // These keep your custom dark card look inside the list
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
                                 .listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20))
                         }
-                        .onDelete(perform: removeExercise) // Native Apple Swipe!
+                        .onDelete(perform: removeExercise)
                         
-                        // --- Add Exercise Button ---
                         Button(action: { showingExerciseSheet = true }) {
                             HStack {
                                 Image(systemName: "plus.circle.fill")
@@ -85,12 +79,11 @@ struct WorkoutBuilderView: View {
                         }
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 120, trailing: 20)) // Bottom padding for Save button
+                        .listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 120, trailing: 20))
                     }
-                    .listStyle(.plain) // Removes grouped list styling
-                    .scrollContentBackground(.hidden) // Removes default gray/white list background
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
                     
-                    // --- Floating Save Button ---
                     VStack {
                         Button(action: finishAndSaveWorkout) {
                             HStack {
@@ -129,16 +122,25 @@ struct WorkoutBuilderView: View {
             }
         }
     private func finishAndSaveWorkout() {
-        isSaving = true
-        
-        let totalSets = exercises.reduce(0) { $0 + $1.sets.count }
-        let estimatedMinutes = Double(max(15, totalSets * 3))
-        
-        settings.healthManager.saveWorkout(type: .traditionalStrengthTraining, date: selectedDate, durationMinutes: estimatedMinutes) { success in
-            isSaving = false
-            dismiss()
+            isSaving = true
+            
+            let totalSets = exercises.reduce(0) { $0 + $1.sets.count }
+            let estimatedMinutes = Double(max(15, totalSets * 3))
+            
+            let detailedLog = DetailedWorkout(
+                date: selectedDate,
+                title: workoutTitle,
+                exercises: exercises,
+                durationMinutes: Int(estimatedMinutes)
+            )
+            
+            settings.saveDetailedWorkout(detailedLog)
+            
+            settings.healthManager.saveWorkout(type: .traditionalStrengthTraining, date: selectedDate, durationMinutes: estimatedMinutes) { success in
+                isSaving = false
+                dismiss()
+            }
         }
-    }
     private func removeExercise(at offsets: IndexSet) {
             exercises.remove(atOffsets: offsets)
         }
@@ -150,7 +152,6 @@ struct ExerciseCardView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header
             HStack {
                 Text(exercise.name)
                     .font(.headline)
@@ -159,8 +160,7 @@ struct ExerciseCardView: View {
             }
             .background(Color(.systemGray6).opacity(0.3))
             .cornerRadius(16)
-            
-            // Sets Rows
+
             VStack(spacing: 12) {
                 HStack {
                     Text("SET").font(.caption).bold().foregroundColor(.gray).frame(width: 40)
