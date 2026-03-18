@@ -17,17 +17,30 @@ struct LogView: View {
     @State private var dailyLogs: [DailyLog] = []
     
     var groupedLogsData: [WeeklyLogGroup] {
+        var calendar = Calendar.current
+        calendar.firstWeekday = 2 // 2 = Monday. This forces the week to start on Monday!
+        
         let dict = Dictionary(grouping: dailyLogs) { log in
-            let components = Calendar.current.dateComponents([.yearForWeekOfYear, .weekOfYear], from: log.date)
-            return Calendar.current.date(from: components) ?? log.date
+            let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: log.date)
+            return calendar.date(from: components) ?? log.date
         }
         
-        return dict.map { (key, logs) in
-            WeeklyLogGroup(
-                weekStart: key,
+        return dict.map { (weekStart, logs) in
+            
+            // This looks backward in time before Monday at 00:00.
+            // The very first log it finds will be Sunday's final weigh-in.
+            let priorLogs = dailyLogs.filter { $0.date < weekStart }.sorted { $0.date > $1.date }
+            let baselineWeight = priorLogs.first(where: { $0.weight > 0 })?.weight
+            let baselineFat = priorLogs.first(where: { $0.bodyFat > 0 })?.bodyFat
+            
+            return WeeklyLogGroup(
+                weekStart: weekStart,
                 logs: logs.sorted { $0.date > $1.date },
-                weightLost: calculateWeeklyWeightLoss(for: logs),
-                fatDropped: calculateWeeklyFatLoss(for: logs),
+                
+                // We pass Sunday's weight in as the baseline
+                weightLost: calculateWeeklyWeightLoss(for: logs, baseline: baselineWeight),
+                fatDropped: calculateWeeklyFatLoss(for: logs, baseline: baselineFat),
+                
                 totalSteps: logs.reduce(0) { $0 + $1.steps }
             )
         }.sorted { $0.weekStart > $1.weekStart }
@@ -82,27 +95,25 @@ struct LogView: View {
         .padding(.horizontal)
     }
 
-    func calculateWeeklyWeightLoss(for logs: [DailyLog]) -> Double {
-        let sortedLogs = logs.sorted { $0.date < $1.date }
-        let validLogs = sortedLogs.filter { $0.weight > 0 }
+    func calculateWeeklyWeightLoss(for logs: [DailyLog], baseline: Double?) -> Double {
+        let validLogs = logs.sorted { $0.date < $1.date }.filter { $0.weight > 0 }
         
-        guard let firstWeight = validLogs.first?.weight,
-              let lastWeight = validLogs.last?.weight,
-              validLogs.count >= 1 else { return 0.0 }
+        // We need the last recorded weight of the current week (e.g., Friday or Saturday)
+        guard let lastWeight = validLogs.last?.weight else { return 0.0 }
         
-        return validLogs.count > 1 ? firstWeight - lastWeight : 0.0
+        // Use Sunday's baseline! If it's the very first week and no Sunday exists, it uses Monday's weight.
+        let startingWeight = baseline ?? validLogs.first?.weight ?? lastWeight
+        
+        // Sunday Weight - End of Week Weight = Total Lost This Week
+        return startingWeight - lastWeight
     }
 
-    func calculateWeeklyFatLoss(for logs: [DailyLog]) -> Double {
-        let validLogs = logs.filter { $0.bodyFat > 0 }.sorted { $0.date < $1.date }
-
-        guard validLogs.count >= 2,
-              let first = validLogs.first?.bodyFat,
-              let last = validLogs.last?.bodyFat else {
-            return 0.0
-        }
-
-        return first - last
+    func calculateWeeklyFatLoss(for logs: [DailyLog], baseline: Double?) -> Double {
+        let validLogs = logs.sorted { $0.date < $1.date }.filter { $0.bodyFat > 0 }
+        guard let lastFat = validLogs.last?.bodyFat else { return 0.0 }
+        
+        let startingFat = baseline ?? validLogs.first?.bodyFat ?? lastFat
+        return startingFat - lastFat
     }
         
     func fetchAllLogsSinceStart() {

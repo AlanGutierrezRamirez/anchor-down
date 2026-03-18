@@ -24,6 +24,7 @@ struct WorkoutBuilderView: View {
         "Warmup / Mobility",
         "Dead Bugs",
         "Stretches",
+        "Dumbell Shoulder Press",
         "Dumbbell Press",
         "Dumbbell Row",
         "Bicep Curls",
