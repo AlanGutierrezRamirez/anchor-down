@@ -197,27 +197,27 @@ class HealthManager: ObservableObject {
         let start = calendar.startOfDay(for: date)
         let end = calendar.date(byAdding: .day, value: 1, to: start)!
         
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        let dailyPredicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
         
-        fetchStatistics(for: .stepCount, predicate: predicate, unit: .count()) { steps in
-            self.fetchStatistics(for: .activeEnergyBurned, predicate: predicate, unit: .kilocalorie()) { calories in
-                self.fetchMostRecentSample(for: HKQuantityTypeIdentifier.bodyMass, predicate: predicate, unit: .gramUnit(with: .kilo)) { weight in
-                    self.fetchMostRecentSample(for: HKQuantityTypeIdentifier.bodyFatPercentage, predicate: predicate, unit: .percent()) { fatFraction in
-                        self.fetchStatistics(for: .basalEnergyBurned, predicate: predicate, unit: .kilocalorie()) { resting in
-
-                            self.fetchStatistics(for: .dietaryEnergyConsumed, predicate: predicate, unit: .kilocalorie()) { dietary in
-                                
-                                let log = DailyLog(
-                                    date: date,
-                                    weight: weight,
-                                    steps: Int(steps),
-                                    activeCalories: Int(calories),
-                                    restingCalories: Int(resting),
-                                    bodyFat: fatFraction,
-                                    dietaryCalories: Int(dietary)
-                                )
-                                completion(log)
-                            }
+        let historicalPredicate = HKQuery.predicateForSamples(withStart: Date.distantPast, end: end, options: .strictEndDate)
+        
+        fetchStatistics(for: .stepCount, predicate: dailyPredicate, unit: .count()) { steps in
+            self.fetchStatistics(for: .activeEnergyBurned, predicate: dailyPredicate, unit: .kilocalorie()) { calories in
+                self.fetchStatistics(for: .basalEnergyBurned, predicate: dailyPredicate, unit: .kilocalorie()) { resting in
+                    
+                    // 🚨 Use the HISTORICAL predicate for Body Mass and Fat! 🚨
+                    self.fetchMostRecentSample(for: .bodyMass, predicate: historicalPredicate, unit: .gramUnit(with: .kilo)) { weight in
+                        self.fetchMostRecentSample(for: .bodyFatPercentage, predicate: historicalPredicate, unit: .percent()) { fatFraction in
+                            
+                            let log = DailyLog(
+                                date: date,
+                                weight: weight,
+                                steps: Int(steps),
+                                activeCalories: Int(calories),
+                                restingCalories: Int(resting),
+                                bodyFat: fatFraction * 100
+                            )
+                            completion(log)
                         }
                     }
                 }

@@ -1,50 +1,12 @@
 import SwiftUI
 
-// 1. The Missing Struct: This packages all the math cleanly for the view
-struct WeeklyLogGroup: Identifiable {
-    let id = UUID()
-    let weekStart: Date
-    let logs: [DailyLog]
-    let weightLost: Double
-    let fatDropped: Double
-    let totalSteps: Int
-}
-
 struct LogView: View {
     @EnvironmentObject var settings: SystemSettings
     
-    @AppStorage("startingDate") private var startingDate: Date = Date()
-    @State private var dailyLogs: [DailyLog] = []
+    @AppStorage("startDate") private var startDateSaved: Double = Date().timeIntervalSince1970
     
-    var groupedLogsData: [WeeklyLogGroup] {
-        var calendar = Calendar.current
-        calendar.firstWeekday = 2 // 2 = Monday. This forces the week to start on Monday!
-        
-        let dict = Dictionary(grouping: dailyLogs) { log in
-            let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: log.date)
-            return calendar.date(from: components) ?? log.date
-        }
-        
-        return dict.map { (weekStart, logs) in
-            
-            // This looks backward in time before Monday at 00:00.
-            // The very first log it finds will be Sunday's final weigh-in.
-            let priorLogs = dailyLogs.filter { $0.date < weekStart }.sorted { $0.date > $1.date }
-            let baselineWeight = priorLogs.first(where: { $0.weight > 0 })?.weight
-            let baselineFat = priorLogs.first(where: { $0.bodyFat > 0 })?.bodyFat
-            
-            return WeeklyLogGroup(
-                weekStart: weekStart,
-                logs: logs.sorted { $0.date > $1.date },
-                
-                // We pass Sunday's weight in as the baseline
-                weightLost: calculateWeeklyWeightLoss(for: logs, baseline: baselineWeight),
-                fatDropped: calculateWeeklyFatLoss(for: logs, baseline: baselineFat),
-                
-                totalSteps: logs.reduce(0) { $0 + $1.steps }
-            )
-        }.sorted { $0.weekStart > $1.weekStart }
-    }
+    @State private var dailyLogs: [DailyLog] = []
+    @State private var groupedLogsData: [WeeklyLogGroup] = []
     
     var body: some View {
         NavigationStack {
@@ -56,23 +18,15 @@ struct LogView: View {
                             
                             ForEach(group.logs) { log in
                                 if log.isToday {
-                                    DailyRow(log: DailyLog(
-                                        date: log.date,
-                                        weight: settings.healthManager.currentWeight,
-                                        steps: Int(settings.healthManager.todaySteps),
-                                        activeCalories: Int(settings.healthManager.todayCalories),
-                                        restingCalories: Int(settings.healthManager.restingCalories),
-                                        bodyFat: settings.healthManager.bodyFatPercentage,
-                                        dietaryCalories: Int(settings.healthManager.todayDietaryCalories)
-                                    ))
+                                    DailyRow(log: buildTodayLog(from: log))
                                 } else {
                                     DailyRow(log: log)
                                 }
                             }
                         }
                     }
-                    .padding(.top)
                 }
+                .padding(.top)
             }
             .safeAreaInset(edge: .bottom) {
                 Color.clear.frame(height: 100)
@@ -84,7 +38,18 @@ struct LogView: View {
             }
         }
     }
-
+    
+    private func buildTodayLog(from log: DailyLog) -> DailyLog {
+        return DailyLog(
+            date: log.date,
+            weight: settings.healthManager.currentWeight,
+            steps: Int(settings.healthManager.todaySteps),
+            activeCalories: Int(settings.healthManager.todayCalories),
+            restingCalories: Int(settings.healthManager.restingCalories),
+            bodyFat: settings.healthManager.bodyFatPercentage
+        )
+    }
+    
     @ViewBuilder
     private func headerView(for group: WeeklyLogGroup) -> some View {
         WeeklySummaryCard(
@@ -94,84 +59,111 @@ struct LogView: View {
         )
         .padding(.horizontal)
     }
-
+    
     func calculateWeeklyWeightLoss(for logs: [DailyLog], baseline: Double?) -> Double {
         let validLogs = logs.sorted { $0.date < $1.date }.filter { $0.weight > 0 }
-        
-        // We need the last recorded weight of the current week (e.g., Friday or Saturday)
         guard let lastWeight = validLogs.last?.weight else { return 0.0 }
-        
-        // Use Sunday's baseline! If it's the very first week and no Sunday exists, it uses Monday's weight.
         let startingWeight = baseline ?? validLogs.first?.weight ?? lastWeight
-        
-        // Sunday Weight - End of Week Weight = Total Lost This Week
         return startingWeight - lastWeight
     }
-
+    
     func calculateWeeklyFatLoss(for logs: [DailyLog], baseline: Double?) -> Double {
         let validLogs = logs.sorted { $0.date < $1.date }.filter { $0.bodyFat > 0 }
         guard let lastFat = validLogs.last?.bodyFat else { return 0.0 }
-        
         let startingFat = baseline ?? validLogs.first?.bodyFat ?? lastFat
         return startingFat - lastFat
     }
-        
+    
     func fetchAllLogsSinceStart() {
         let calendar = Calendar.current
-        @AppStorage("startDate") var startDateSaved: Double = Date().timeIntervalSince1970
-        let start = calendar.startOfDay(for: Date(timeIntervalSince1970: startDateSaved))
         let today = calendar.startOfDay(for: Date())
+        let start = Date(timeIntervalSince1970: startDateSaved)
         
         let components = calendar.dateComponents([.day], from: start, to: today)
-        let daysPassed = components.day ?? 0
+        let daysPassed = min(components.day ?? 0, 365)
         
-        self.dailyLogs = []
+        var tempLogs: [DailyLog] = []
+        let fetchGroup = DispatchGroup()
         
         for i in 0...daysPassed {
             if let targetDate = calendar.date(byAdding: .day, value: -i, to: today) {
+                
+                fetchGroup.enter()
                 settings.healthManager.fetchDataForDay(targetDate) { log in
                     DispatchQueue.main.async {
-                        self.dailyLogs.append(log)
+                        tempLogs.append(log)
+                        fetchGroup.leave()
                     }
                 }
             }
         }
+        
+        fetchGroup.notify(queue: .main) {
+            let sortedLogs = tempLogs.sorted { $0.date > $1.date }
+            self.dailyLogs = sortedLogs
+            
+            DispatchQueue.global(qos: .userInitiated).async {
+                let processedGroups = self.buildWeeklyGroups(from: sortedLogs)
+                DispatchQueue.main.async {
+                    self.groupedLogsData = processedGroups
+                }
+            }
+        }
+    }
+    
+    func buildWeeklyGroups(from logs: [DailyLog]) -> [WeeklyLogGroup] {
+        var calendar = Calendar.current
+        calendar.firstWeekday = 2
+        
+        let dict = Dictionary(grouping: logs) { log in
+            let components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: log.date)
+            return calendar.date(from: components) ?? log.date
+        }
+        
+        return dict.map { (weekStart, weekLogs) in
+            let priorLogs = logs.filter { $0.date < weekStart }.sorted { $0.date > $1.date }
+            let baselineWeight = priorLogs.first(where: { $0.weight > 0 })?.weight
+            let baselineFat = priorLogs.first(where: { $0.bodyFat > 0 })?.bodyFat
+            
+            return WeeklyLogGroup(
+                weekStart: weekStart,
+                logs: weekLogs.sorted { $0.date > $1.date },
+                weightLost: calculateWeeklyWeightLoss(for: weekLogs, baseline: baselineWeight),
+                fatDropped: calculateWeeklyFatLoss(for: weekLogs, baseline: baselineFat),
+                totalSteps: weekLogs.reduce(0) { $0 + $1.steps }
+            )
+        }.sorted { $0.weekStart > $1.weekStart }
     }
 }
 
 struct DailyLog: Identifiable {
-    let id = UUID()
+    var id: Date { date }
     let date: Date
     let weight: Double
     let steps: Int
     let activeCalories: Int
     let restingCalories: Int
     let bodyFat: Double
-    let dietaryCalories: Int
     
-    var isToday: Bool {
-        Calendar.current.isDateInToday(date)
-    }
-    
-    var totalCaloriesBurned: Int {
-        return activeCalories + restingCalories
-    }
-    
-    var netCalories: Int {
-        return dietaryCalories - totalCaloriesBurned
-    }
+    var isToday: Bool { Calendar.current.isDateInToday(date) }
+    var totalCaloriesBurned: Int { activeCalories + restingCalories }
+    var fatMass: Double { weight * (bodyFat / 100.0) }
+}
+
+struct WeeklyLogGroup: Identifiable {
+    var id: Date { weekStart }
+    let weekStart: Date
+    let logs: [DailyLog]
+    let weightLost: Double
+    let fatDropped: Double
+    let totalSteps: Int
 }
 
 struct DailyRow: View {
     let log: DailyLog
     
-    var netColor: Color {
-        log.netCalories < 0 ? .green : .red
-    }
-    
     var body: some View {
         VStack(spacing: 16) {
-
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(log.date.formatted(.dateTime.day().month(.wide)))
@@ -180,9 +172,7 @@ struct DailyRow: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
-                
                 Spacer()
-                
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(String(format: "%.1f kg", log.weight))
                         .font(.title3.weight(.bold))
@@ -193,52 +183,22 @@ struct DailyRow: View {
                 }
             }
             
-            Divider()
-                .background(Color.gray.opacity(0.3))
-
+            Divider().background(Color.gray.opacity(0.3))
+        
             HStack {
-                DailyStatItem(
-                    title: "Steps",
-                    value: "\(log.steps)",
-                    icon: "shoeprints.fill",
-                    color: .primary
-                )
-                
+                DailyStatItem(title: "Steps", value: "\(log.steps)", icon: "shoeprints.fill", color: .primary)
                 Spacer()
-
-                DailyStatItem(
-                    title: "Eaten",
-                    value: "\(log.dietaryCalories)",
-                    icon: "fork.knife",
-                    color: .green
-                )
-                
+                DailyStatItem(title: "Burned", value: "\(log.totalCaloriesBurned)", icon: "flame.fill", color: .orange)
                 Spacer()
-
-                DailyStatItem(
-                    title: "Burned",
-                    value: "\(log.totalCaloriesBurned)",
-                    icon: "flame.fill",
-                    color: .orange
-                )
-                
+                DailyStatItem(title: "Fat %", value: String(format: "%.1f%%", log.bodyFat), icon: "percent", color: .pink)
                 Spacer()
-
-                DailyStatItem(
-                    title: "Net",
-                    value: "\(abs(log.netCalories))",
-                    icon: log.netCalories < 0 ? "arrow.down.right" : "arrow.up.right",
-                    color: netColor
-                )
+                DailyStatItem(title: "Fat Mass", value: String(format: "%.1f kg", log.fatMass), icon: "drop.fill", color: .red)
             }
         }
         .padding(16)
-        .background(Color(.systemGray6).opacity(0.15)) // Subtle card background
+        .background(Color(.systemGray6).opacity(0.15))
         .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.1), lineWidth: 1))
         .padding(.horizontal)
     }
 }
@@ -251,21 +211,13 @@ struct DailyStatItem: View {
     
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundColor(color.opacity(0.8))
-            
-            Text(value)
-                .font(.system(.subheadline, design: .rounded).bold())
-                .foregroundColor(color)
-            
-            Text(title)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.secondary)
+            Image(systemName: icon).font(.caption).foregroundColor(color.opacity(0.8))
+            Text(value).font(.system(.subheadline, design: .rounded).bold()).foregroundColor(color)
+            Text(title).font(.system(size: 10, weight: .medium)).foregroundColor(.secondary)
         }
         .frame(minWidth: 50)
     }
-} 
+}
 
 struct WeeklySummaryCard: View {
     let weightLost: Double
@@ -286,7 +238,7 @@ struct WeeklySummaryCard: View {
                 }
                 Spacer()
                 VStack(alignment: .leading) {
-                    Text(fatDropped, format: .percent.precision(.fractionLength(1)))
+                    Text("\(String(format: "%.1f", fatDropped))%")
                         .font(.title2).bold()
                     Text("Fat Dropped").font(.caption)
                 }
@@ -303,9 +255,4 @@ struct WeeklySummaryCard: View {
         .cornerRadius(15)
         .overlay(RoundedRectangle(cornerRadius: 15).stroke(Color.cyan.opacity(0.3), lineWidth: 1))
     }
-}
-
-#Preview {
-    LogView()
-        .environmentObject(SystemSettings())
 }
